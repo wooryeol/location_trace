@@ -14,6 +14,8 @@ import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.core.app.ActivityCompat
 import com.google.android.gms.location.*
+import com.gun0912.tedpermission.PermissionListener
+import com.gun0912.tedpermission.normal.TedPermission
 import com.naver.maps.geometry.LatLng
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -39,9 +41,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: ArrayAdapter<String>
     private var data: ArrayList<String> = arrayListOf()
 
-
-
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         mBinding = ActivityMainBinding.inflate(layoutInflater)
@@ -54,10 +53,12 @@ class MainActivity : AppCompatActivity() {
 
         executor = Executors.newSingleThreadScheduledExecutor()
         val task = Runnable {
-            checkLocationPermission()
+            TedPermission.create()
+                .setPermissionListener(permission)
+                .setDeniedMessage("권한이 거부되었습니다. 설정 > 권한에서 허용해주세요.")
+                .setPermissions(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+                .check()
         }
-
-        checkLocationPermission()
 
         mBinding.recording.setOnClickListener {
             if (scheduledFuture == null || scheduledFuture!!.isCancelled){
@@ -77,38 +78,17 @@ class MainActivity : AppCompatActivity() {
         mBinding.buttonShowMap.setOnClickListener {
             showMap()
         }
-
-    }
-
-    private fun showMap(){
-        val manager = supportFragmentManager
-        val transaction = manager.beginTransaction()
-        val fragment = MapsFragment()
-        val bundle = Bundle()
-        bundle.putParcelableArrayList("LATLNG", ArrayList(locationInfo))
-        fragment.arguments = bundle
-        transaction.add(R.id.maps_fragment, fragment)
-        transaction.addToBackStack(null)
-        transaction.commit()
     }
 
     @OptIn(DelicateCoroutinesApi::class)
-    @SuppressLint("MissingPermission", "SetTextI18n")
-    private fun checkLocationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-            ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED &&
-            ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
-        ) {
+    private val permission = object : PermissionListener {
+        @SuppressLint("MissingPermission")
+        override fun onPermissionGranted() {
+            Toast.makeText(this@MainActivity, "권한 허가", Toast.LENGTH_SHORT).show()
             fusedLocationClient.lastLocation
                 .addOnSuccessListener { location: Location? ->
                     if (location != null) {
-                        val geocoder = Geocoder(this, Locale.KOREA)
+                        val geocoder = Geocoder(this@MainActivity, Locale.KOREA)
                         GlobalScope.launch(Dispatchers.IO) {
                             val addressList = geocoder.getFromLocation(location.latitude, location.longitude, 1)
                             withContext(Dispatchers.Main) {
@@ -128,13 +108,23 @@ class MainActivity : AppCompatActivity() {
                         Log.w("checkLocationPermission", "location이 null입니다.")
                     }
                 }
-        } else {
-            Toast.makeText(this, "위치권한이 없습니다.", Toast.LENGTH_SHORT).show()
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),1000
-            )
         }
+
+        override fun onPermissionDenied(deniedPermissions: MutableList<String>?) {
+            Toast.makeText(this@MainActivity, "권한 거부", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun showMap(){
+        val manager = supportFragmentManager
+        val transaction = manager.beginTransaction()
+        val fragment = MapsFragment()
+        val bundle = Bundle()
+        bundle.putParcelableArrayList("LATLNG", ArrayList(locationInfo))
+        fragment.arguments = bundle
+        transaction.add(R.id.maps_fragment, fragment)
+        transaction.addToBackStack(null)
+        transaction.commit()
     }
 
 
