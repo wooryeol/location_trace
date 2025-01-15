@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/maps_fragment"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:name="com.naver.maps.map.MapFragment" />
+
+    <ImageButton
+        android:id="@+id/close_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:src="@drawable/ic_close"
+        android:layout_gravity="end|top"
+        android:padding="16dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:contentDescription="@string/close_button_desc" />
+</FrameLayout>

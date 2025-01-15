@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Tracer</string>
+    <string name="recording">기록 시작</string>
+    <string name="recording_stop">기록 정지</string>
+    <string name="show_map">Show map</string>
+    <string name="close_button_desc">Close</string>
+
+    <string name="naver_map_client_id">pdpbsrhj5e</string>
+</resources>
