@@ -5,13 +5,13 @@ plugins {
 
 android {
     namespace = "kr.co.example.tracer"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "kr.co.example.tracer"
         minSdk = 30
-        targetSdk = 33
-        versionCode = 1
+        targetSdk = 34
+        versionCode = 25011901
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -36,6 +36,7 @@ android {
 
     buildFeatures {
         viewBinding = true
+        dataBinding = true
     }
 }
 
@@ -55,4 +56,9 @@ dependencies {
     implementation("com.github.bumptech.glide:glide:4.15.1")
     //지도
     implementation("com.naver.maps:map-sdk:3.17.0")
+    // Lifecycle 라이브러리
+    implementation ("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
+    // 뷰모델
+    implementation ("androidx.activity:activity-ktx:1.10.0")
+    implementation ("androidx.fragment:fragment-ktx:1.6.2")
 }

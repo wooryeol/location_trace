@@ -2,112 +2,53 @@ package kr.co.example.tracer
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.content.pm.PackageManager
-import android.location.Geocoder
+import android.graphics.Color
 import android.location.Location
-import android.os.Build
-import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Toast
-import androidx.core.app.ActivityCompat
-import com.google.android.gms.location.*
+import androidx.activity.viewModels
+import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Observer
+import androidx.lifecycle.ViewModelProvider
+import com.google.android.gms.location.FusedLocationProviderClient
 import com.gun0912.tedpermission.PermissionListener
 import com.gun0912.tedpermission.normal.TedPermission
 import com.naver.maps.geometry.LatLng
-import kotlinx.coroutines.DelicateCoroutinesApi
+import com.naver.maps.map.CameraPosition
+import com.naver.maps.map.CameraUpdate
+import com.naver.maps.map.LocationTrackingMode
+import com.naver.maps.map.NaverMap
+import com.naver.maps.map.OnMapReadyCallback
+import com.naver.maps.map.overlay.PathOverlay
+import com.naver.maps.map.util.FusedLocationSource
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kr.co.example.tracer.databinding.ActivityMainBinding
-import java.util.Locale
-import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var mBinding : ActivityMainBinding
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
-    private lateinit var executor: ScheduledExecutorService
-    private var scheduledFuture: ScheduledFuture<*>? = null
-
-    private var address: List<String> = listOf("서울특별시", "중구", "명동")
-    private var locationInfo = mutableListOf<LatLng>()
     private lateinit var adapter: ArrayAdapter<String>
-    private var data: ArrayList<String> = arrayListOf()
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        mBinding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(mBinding.root)
-
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-
-        adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, data)
-        mBinding.list.adapter = adapter
-
-        executor = Executors.newSingleThreadScheduledExecutor()
-        val task = Runnable {
-            TedPermission.create()
-                .setPermissionListener(permission)
-                .setDeniedMessage("권한이 거부되었습니다. 설정 > 권한에서 허용해주세요.")
-                .setPermissions(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-                .check()
-        }
-
-        mBinding.recording.setOnClickListener {
-            if (scheduledFuture == null || scheduledFuture!!.isCancelled){
-                scheduledFuture = executor.scheduleAtFixedRate(task, 0, 1, TimeUnit.SECONDS)
-                mBinding.recording.text = getString(R.string.recording_stop)
-                mBinding.buttonShowMap.visibility = View.VISIBLE
-            } else {
-                mBinding.recording.text = getString(R.string.recording)
-                scheduledFuture!!.cancel(true)
-                scheduledFuture = null
-                mBinding.buttonShowMap.visibility = View.GONE
-                data.clear()
-                adapter.notifyDataSetChanged()
-            }
-        }
-
-        mBinding.buttonShowMap.setOnClickListener {
-            showMap()
-        }
+    private val locationViewModel: LocationViewModel by viewModels {
+        LocationViewModelFactory(this)
     }
 
-    @OptIn(DelicateCoroutinesApi::class)
+    private var locationInfo: ArrayList<LatLng> = arrayListOf()
+    private var adapterDataList: ArrayList<String> = arrayListOf()
+    private lateinit var locationSource: FusedLocationSource
+
+    private var isGranted = false
+    private var isClicked = false
+
     private val permission = object : PermissionListener {
-        @SuppressLint("MissingPermission")
         override fun onPermissionGranted() {
             Toast.makeText(this@MainActivity, "권한 허가", Toast.LENGTH_SHORT).show()
-            fusedLocationClient.lastLocation
-                .addOnSuccessListener { location: Location? ->
-                    if (location != null) {
-                        val geocoder = Geocoder(this@MainActivity, Locale.KOREA)
-                        GlobalScope.launch(Dispatchers.IO) {
-                            val addressList = geocoder.getFromLocation(location.latitude, location.longitude, 1)
-                            withContext(Dispatchers.Main) {
-                                if (!addressList.isNullOrEmpty()) {
-                                    for (addressInfo in addressList) {
-                                        val splitAddress = addressInfo.getAddressLine(0).split(" ")
-                                        address = splitAddress
-                                    }
-                                    Log.d("test log", "address >>> $address")
-                                    Log.d("test log", "위도: ${location.latitude} / 경도: ${location.longitude}")
-                                    createView("위도: ${location.latitude} / 경도: ${location.longitude}")
-                                    locationInfo.add(LatLng(location))
-                                }
-                            }
-                        }
-                    } else {
-                        Log.w("checkLocationPermission", "location이 null입니다.")
-                    }
-                }
+            isGranted = true
         }
 
         override fun onPermissionDenied(deniedPermissions: MutableList<String>?) {
@@ -115,50 +56,70 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        mBinding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(mBinding.root)
+
+        mBinding.lifecycleOwner = this
+        mBinding.viewModel = locationViewModel
+        locationSource = FusedLocationSource(this, 1000)
+
+        locationViewModel.result.observe(this, Observer { location ->
+            if (isClicked) {
+                addLocation(location)
+                locationInfo.add(location)
+            }
+        })
+
+        adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, adapterDataList)
+        mBinding.list.adapter = adapter
+
+        mBinding.recording.setOnClickListener {
+            if (isGranted) {
+                isClicked = !isClicked
+                if (isClicked) {
+                    mBinding.recording.text = getString(R.string.recording_stop)
+                    adapterDataList.clear()
+                    adapter.notifyDataSetChanged()
+                    locationViewModel.getLocation()
+                    mBinding.buttonShowMap.visibility = View.VISIBLE
+                } else {
+                    mBinding.recording.text = getString(R.string.recording)
+                    mBinding.buttonShowMap.visibility = View.GONE
+                }
+            } else {
+                requestPermission()
+            }
+        }
+
+        mBinding.buttonShowMap.setOnClickListener {
+            showMap()
+        }
+
+        requestPermission()
+    }
+
+    private fun requestPermission() {
+        TedPermission.create()
+            .setPermissionListener(permission)
+            .setDeniedMessage("권한이 거부되었습니다. 설정 > 권한에서 허용해주세요.")
+            .setPermissions(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            .check()
+    }
+
+    private fun addLocation(location: LatLng) {
+        adapterDataList.add("${adapterDataList.size}. 위도: ${location.latitude} / 경도: ${location.longitude}")
+        adapter.notifyDataSetChanged()
+    }
+
     private fun showMap(){
         val manager = supportFragmentManager
         val transaction = manager.beginTransaction()
         val fragment = MapsFragment()
-        val bundle = Bundle()
-        bundle.putParcelableArrayList("LATLNG", ArrayList(locationInfo))
-        fragment.arguments = bundle
+        fragment.locationSource = locationSource
         transaction.add(R.id.maps_fragment, fragment)
         transaction.addToBackStack(null)
         transaction.commit()
-    }
-
-
-    private fun createView(location: String) {
-        data.add(location)
-        adapter.notifyDataSetChanged()
-    }
-
-    private val multiplePermissionsCode = 100
-    private var gpsGranted = false
-
-    @SuppressLint("MissingSuperCall")
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>, grantResults: IntArray
-    ) {
-        when (requestCode) {
-            multiplePermissionsCode -> {
-                if (grantResults.isNotEmpty()) {
-                    for ((i, permission) in permissions.withIndex()) {
-                        if (grantResults[i] != PackageManager.PERMISSION_GRANTED) {
-                            //권한 획득 실패시 동작
-                            Toast.makeText(
-                                this,
-                                "The user has denied to $permission",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            Log.i("TAG", "I can't work for you anymore then. ByeBye!")
-                        } else {
-                            gpsGranted = true
-                        }
-                    }
-                }
-            }
-        }
     }
 }
